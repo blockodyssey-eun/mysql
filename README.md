@@ -1,80 +1,58 @@
-# MySQL에서 PostgreSQL로의 데이터 마이그레이션
+# MySQL에서 PostgreSQL로의 데이터 마이그레이션 가이드
 
-## 환경 설정
+Docker와 pgloader를 사용하여 MySQL에서 PostgreSQL로 데이터를 마이그레이션하는 스크립트
 
-1. `.env` 파일 생성:
-   ```
-   $ cp env.example .env
-   ```
+## 사전 요구사항
 
-2. `.env` 파일 내용 설정:
-   ```
-   # MySQL 설정 (dump파일을 임시로 로컬에 구현하기위함)
-   MYSQL_ROOT_PASSWORD=qwer1234
-   MYSQL_DATABASE=user
-   MYSQL_PORT=3333
+- Docker와 Docker Compose 설치
 
-   # PostgreSQL 설정
-   POSTGRES_DB=
-   POSTGRES_USER=
-   POSTGRES_PASSWORD=
-   POSTGRES_HOST=
-   POSTGRES_PORT=
+## 설정
 
-   # 공통 데이터 폴더
-   DATA_PATH_HOST=./data
-   ```
+1. 이 저장소를 로컬 머신에 클론합니다.
 
-## 로컬 테스트 가이드
+2. 프로젝트 루트에 다음 내용으로 `.env` 파일을 생성합니다:
 
-### 1. Docker를 사용한 PostgreSQL (기본 설정)
+```
+// MySQL 설정
+MYSQL_ROOT_PASSWORD=qwer1234
+MYSQL_PORT=3333
 
-1. `docker-compose.yml` 파일에서 PostgreSQL 주석 해제:
-  
-   ```yaml
-   postgres:
-     image: postgres:16
-     environment:
-       POSTGRES_DB: ${POSTGRES_DB}
-       POSTGRES_USER: ${POSTGRES_USER}
-       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-     ports:
-       - "${POSTGRES_PORT}:5432"
-     volumes:
-       - ${DATA_PATH_HOST}/postgres:/var/lib/postgresql/data
-     networks:
-       - migration_network
-   ```
+// PostgreSQL 설정
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+POSTGRES_USER=custody
+POSTGRES_PASSWORD=qwer1234
 
-2. Docker 컨테이너 실행:
-   ```
-   $ docker-compose up -d
-   ```
+// 공통 설정
+DATA_PATH_HOST=./data
+```
 
-## 마이그레이션 실행
+**`POSTGRES_HOST=postgres`는 로컬 Docker 설정용입니다. 원격 PostgreSQL의 경우 실제 호스트 주소를 입력하세요.**
 
-#### 사전 준비
-
-1. MySQL 덤프 파일 준비(dumps/[파일명]_dump.sql):
-
-   *로컬 mysqldump 또는 tool 이용하기
-
-   ```bash
-   $ mysqldump -u root -p --databases user > user_dump.sql 
-
-
-
-#### 실행
-
-1. 마이그레이션 스크립트 실행 권한 부여:
-   ```
-   $ chmod +x migrate.sh
-   $ chmod +x verify.sh
-   ```
-
-2. 마이그레이션 실행:
-   ```
-   $ ./migrate.sh
-   ```
-
+3. MySQL 덤프 파일을 `dumps` 디렉토리에 넣습니다. 파일 이름은 `[데이터베이스명]_dumps.sql` 형식이어야 합니다. 
    
+   **[데이터베이스명]_dumps.sql에서 [데이터베이스명]은 postgres의 데이터베이스 이름이 됩니다.**
+
+## 사용 방법
+
+1. 스크립트에 실행 권한을 부여합니다:
+```
+chmod +x migrate.sh
+```
+
+2. 마이그레이션 스크립트를 실행합니다:
+```
+./migrate.sh
+```
+
+## 스크립트 동작 방식
+
+1. `.env`에서 환경 변수를 로드합니다.
+2. 실행 중인 Docker 컨테이너를 중지하고 다시 시작합니다.
+3. MySQL과 PostgreSQL 서비스가 준비될 때까지 기다립니다.
+4. MySQL root 사용자를 재생성합니다.
+5. `dumps` 디렉토리의 각 덤프 파일에 대해:
+- PostgreSQL에 해당 데이터베이스가 없으면 생성합니다.
+- pgloader 설정 파일을 생성합니다.
+- pgloader를 실행하여 MySQL에서 PostgreSQL로 데이터를 마이그레이션합니다.
+- PostgreSQL 데이터베이스의 테이블을 나열하여 마이그레이션을 확인합니다.
