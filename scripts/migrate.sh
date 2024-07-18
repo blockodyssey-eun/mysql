@@ -1,12 +1,25 @@
 #!/bin/bash
 
+# Docker Compose 버전 확인 및 명령어 설정
+set_docker_compose_cmd() {
+    if docker compose version &> /dev/null; then
+        DOCKER_COMPOSE_CMD="docker compose"
+    elif docker-compose --version &> /dev/null; then
+        DOCKER_COMPOSE_CMD="docker-compose"
+    else
+        echo "Error: Docker Compose not found. Please install Docker Compose."
+        exit 1
+    fi
+    echo "Using Docker Compose command: $DOCKER_COMPOSE_CMD"
+}
+
 load_env() {
     source .env
 }
 
 docker_down_and_up() {
-    docker-compose down -v
-    docker-compose up -d
+    $DOCKER_COMPOSE_CMD down -v
+    $DOCKER_COMPOSE_CMD up -d
 }
 
 wait_for_service() {
@@ -16,13 +29,13 @@ wait_for_service() {
     
     echo "${service}: 실행 대기..."
     while [ $attempt -lt $max_attempts ]; do
-        if [ "$service" = "MySQL" ] && docker-compose exec -T mysql mysqladmin ping -h mysql -u root -p"${MYSQL_ROOT_PASSWORD}" --silent &> /dev/null; then
+        if [ "$service" = "MySQL" ] && $DOCKER_COMPOSE_CMD exec -T mysql mysqladmin ping -h mysql -u root -p"${MYSQL_ROOT_PASSWORD}" --silent &> /dev/null; then
             echo "${service}: 실행 완료."
             return 0
         elif [ "$service" = "PostgreSQL" ]; then
             echo "PostgreSQL이 시작될 때까지 대기 중..."
             if [ "$POSTGRES_HOST" = "postgres" ]; then
-                if docker-compose exec -T postgres pg_isready -h localhost -U ${POSTGRES_USER} --quiet &> /dev/null; then
+                if $DOCKER_COMPOSE_CMD exec -T postgres pg_isready -h localhost -U ${POSTGRES_USER} --quiet &> /dev/null; then
                     echo "PostgreSQL이 준비되었습니다."
                     return 0
                 fi
@@ -70,12 +83,9 @@ BEFORE LOAD DO
 EOF
 }
 
-
-
-
 recreate_mysql_root_user() {
     echo "MySQL: Root계정 재생성..."
-    docker-compose exec -T mysql mysql -h mysql -u root -p"${MYSQL_ROOT_PASSWORD}" <<EOF
+    $DOCKER_COMPOSE_CMD exec -T mysql mysql -h mysql -u root -p"${MYSQL_ROOT_PASSWORD}" <<EOF
 DROP USER IF EXISTS 'root'@'%';
 CREATE USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${MYSQL_ROOT_PASSWORD}';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
@@ -85,11 +95,12 @@ EOF
 
 execute_psql() {
     if [ "$POSTGRES_HOST" = "postgres" ]; then
-        docker-compose exec -T postgres psql -U ${POSTGRES_USER} "$@"
+        $DOCKER_COMPOSE_CMD exec -T postgres psql -U ${POSTGRES_USER} "$@"
     else
         docker run --rm -e PGPASSWORD=${POSTGRES_PASSWORD} postgres:16 psql -h ${POSTGRES_HOST} -p ${POSTGRES_PORT} -U ${POSTGRES_USER} "$@"
     fi
 }
+
 
 migrate_database() {
     local db_name=$1
@@ -111,7 +122,8 @@ migrate_database() {
     fi
 
     create_pgloader_config ${db_name} ${db_name}
-    docker-compose run --rm pgloader pgloader --verbose /pgloader_config/pgloader.load
+    $DOCKER_COMPOSE_CMD run --rm pgloader pgloader --verbose /pgloader_config/pgloader.load
+
 
     if [ $? -ne 0 ]; then
         echo "Migration for ${db_name} failed."
@@ -128,6 +140,7 @@ verify_migration() {
 }
 
 main() {
+    set_docker_compose_cmd
     load_env
     docker_down_and_up
     wait_for_service "MySQL"
@@ -135,16 +148,26 @@ main() {
 
     recreate_mysql_root_user
 
-    # dumps 디렉토리에서 SQL 파일들을 찾아 마이그레이션 수행
-    for dump_file in dumps/*_dumps.sql; do
-        if [ -f "$dump_file" ]; then
-            db_name=$(basename "$dump_file" _dumps.sql)
-            migrate_database ${db_name}
-            verify_migration ${db_name}
-        fi
-    done
+    # 명령줄 인자 확인
+    if [ $# -eq 0 ]; then
+        echo "Usage: $0 <dump_file_path>"
+        exit 1
+    fi
 
-    echo "All migrations completed."
+    dump_file="$1"
+    if [ ! -f "$dump_file" ]; then
+        echo "Error: File $dump_file does not exist."
+        exit 1
+    fi
+
+    # 파일 이름에서 데이터베이스 이름 추출
+    db_name=$(basename "$dump_file" _dumps.sql)
+    
+    echo "Processing database: $db_name"
+    migrate_database ${db_name}
+    verify_migration ${db_name}
+
+    echo "Migration completed for $db_name."
 }
 
-main
+main "$@"

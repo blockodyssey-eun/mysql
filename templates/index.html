@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>MySQL To PostgreSQL Migrator</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .form-inline { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .upload-box { flex-grow: 1; }
+        .log-box { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
+        .btn { display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; }
+        .btn:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MySQL To PostgreSQL Migrator</h1>
+        <form action="/migrate" method="post" enctype="multipart/form-data" class="form-inline">
+            <div class="upload-box">
+                <label for="file">.sql (dump) 파일 업로드:</label>
+                <input type="file" name="file" id="file" accept=".sql">
+            </div>
+            <button type="submit" class="btn">Migrate 버튼</button>
+        </form>
+        <div class="log-box">
+            <h2>로그</h2>
+            <pre>{{ log }}</pre>
+        </div>
+    </div>
+</body>
+</html>

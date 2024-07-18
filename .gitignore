@@ -1,3 +1,32 @@
 # .env
 # dumps/user_dumps.sql
-data
+# data
+# pgloader.load
+
+# Python 관련
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+*.env
+
+# 환경 설정 파일
+.env
+
+# Flask 관련
+instance/
+.webassets-cache
+
+# Docker 관련
+docker-compose.override.yml
+docker-compose.override.yml
+.docker/
+docker-compose.override.yml
+docker-compose.override.yml
+
+# macOS 관련
+.DS_Store
+
+# 업로드된 파일
+uploads/
+pgloader.load
