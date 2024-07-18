@@ -52,9 +52,7 @@ LOAD DATABASE
     FROM mysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
     INTO postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
 
-
 WITH include drop, create tables, drop indexes, create indexes, foreign keys, uniquify index names, quote identifiers
-
 
 SET maintenance_work_mem to '128MB', work_mem to '12MB'
 
@@ -65,9 +63,9 @@ CAST type datetime to timestamp using zero-dates-to-null,
 
 ALTER SCHEMA '${MYSQL_DATABASE}' RENAME TO 'public'
 
-
 BEFORE LOAD DO
-  \$\$ CREATE EXTENSION IF NOT EXISTS pgcrypto; \$\$
+   \$\$ create schema if not exists public; \$\$,
+   \$\$ CREATE EXTENSION IF NOT EXISTS pgcrypto; \$\$
 ;
 EOF
 
@@ -83,4 +81,3 @@ echo "마이그레이션이 완료되었습니다."
 
 # 검증 스크립트 실행
 ./verify.sh
-
