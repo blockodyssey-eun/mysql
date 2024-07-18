@@ -14,6 +14,6 @@ CAST type datetime to timestamp using zero-dates-to-null,
 ALTER SCHEMA 'user' RENAME TO 'public'
 
 BEFORE LOAD DO
-   $$ create schema if not exists public; $$,
+   $$ CREATE SCHEMA IF NOT EXISTS public; $$,
    $$ CREATE EXTENSION IF NOT EXISTS pgcrypto; $$
 ;
