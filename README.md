@@ -5,6 +5,7 @@ Docker와 pgloader를 사용하여 MySQL에서 PostgreSQL로 데이터를 마이
 ## 사전 요구사항
 
 - Docker와 Docker Compose 설치
+- Docker Compose v2
 
 ## 설정
 
@@ -27,7 +28,7 @@ POSTGRES_PASSWORD=qwer1234
 DATA_PATH_HOST=./data
 ```
 
-**`POSTGRES_HOST=postgres`는 로컬 Docker 설정용입니다. 원격 PostgreSQL의 경우 실제 호스트 주소를 입력하세요.**
+**`POSTGRES_HOST=postgres`는 로컬 Docker 설정용(강제)입니다. 원격 PostgreSQL의 경우 실제 호스트 주소를 입력하세요.**
 
 3. MySQL 덤프 파일을 `dumps` 디렉토리에 넣습니다. 파일 이름은 `[데이터베이스명]_dumps.sql` 형식이어야 합니다. 
    
