@@ -62,5 +62,3 @@ if ! wait_for_postgres; then
     echo -e "${RED}Failed to connect to PostgreSQL.${NC}"
     exit 1
 fi
-
-echo -e "${GREEN}PostgreSQL is ready.${NC}"

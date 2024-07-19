@@ -48,13 +48,18 @@ Enter database name: custody
 Enter database user: user
 Enter database password: 
 Starting PostgreSQL Docker container...
-cd85d9fe596dfc46d01af60e58a4c4eb501a6432bfe2a97c074b608ddebe1b5a
+a4b6c6292639420a60fbfc924cfdc7661387553a33cff0b5930bda4fc1699d4a
 PostgreSQL container is starting. You can connect to it using:
 Host: localhost
 Port: 5432
 Database: custody
 User: user
 Password: [The password you entered]
+Waiting for PostgreSQL to be ready...
+localhost:5432 - no response
+Waiting for PostgreSQL... (1/30)
+localhost:5432 - accepting connections
+PostgreSQL is ready.
 ```
 
 
