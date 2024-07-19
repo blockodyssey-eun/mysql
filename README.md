@@ -4,8 +4,15 @@ Docker와 pgloader를 사용하여 MySQL에서 PostgreSQL로 데이터를 마이
 
 ## 사전 요구사항
 
+- postgresql
 - Python 3.x
 - Docker, Docker Compose
+
+## postgresql
+
+```
+$ brew install postgresql
+```
 
 
 ## 설치
