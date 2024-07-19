@@ -320,3 +320,15 @@
 2024-07-19 14:14:24,208 - INFO - 127.0.0.1 - - [19/Jul/2024 14:14:24] "GET / HTTP/1.1" 200 -
 2024-07-19 14:14:34,454 - INFO - 127.0.0.1 - - [19/Jul/2024 14:14:34] "POST /connect HTTP/1.1" 200 -
 2024-07-19 14:14:38,316 - INFO - 127.0.0.1 - - [19/Jul/2024 14:14:38] "POST /migrate HTTP/1.1" 200 -
+2024-07-19 14:28:46,508 - INFO -  * Running on http://127.0.0.1:5000/ (Press CTRL+C to quit)
+2024-07-19 14:28:46,514 - INFO -  * Restarting with watchdog (fsevents)
+2024-07-19 14:28:46,618 - WARNING -  * Debugger is active!
+2024-07-19 14:28:46,623 - INFO -  * Debugger PIN: 149-668-529
+2024-07-19 14:28:49,416 - INFO - 127.0.0.1 - - [19/Jul/2024 14:28:49] "GET / HTTP/1.1" 200 -
+2024-07-19 14:29:01,091 - INFO - 127.0.0.1 - - [19/Jul/2024 14:29:01] "POST /connect HTTP/1.1" 200 -
+2024-07-19 14:29:06,025 - INFO - 127.0.0.1 - - [19/Jul/2024 14:29:06] "POST /migrate HTTP/1.1" 200 -
+2024-07-19 14:29:26,724 - INFO - 127.0.0.1 - - [19/Jul/2024 14:29:26] "POST /migrate HTTP/1.1" 200 -
+2024-07-19 14:32:47,731 - INFO -  * Detected change in '/Users/eun/projects/mysql_to_postgres/app.py', reloading
+2024-07-19 14:32:48,761 - INFO -  * Restarting with watchdog (fsevents)
+2024-07-19 14:32:48,938 - WARNING -  * Debugger is active!
+2024-07-19 14:32:48,944 - INFO -  * Debugger PIN: 149-668-529

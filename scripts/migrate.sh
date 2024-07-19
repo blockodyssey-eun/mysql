@@ -36,6 +36,7 @@ wait_for_mysql() {
     while [ $attempt -lt $max_attempts ]; do
         if $DOCKER_COMPOSE_CMD exec -T mysql mysqladmin ping -h localhost -u root -p"${MYSQL_ROOT_PASSWORD}" --silent &> /dev/null; then
             echo "MySQL: 실행 완료."
+            sleep 5
             return 0
         fi
         attempt=$((attempt+1))

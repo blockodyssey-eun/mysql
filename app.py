@@ -28,7 +28,7 @@ def connect():
     user = request.form['POSTGRES_USER']
     password = request.form['POSTGRES_PASSWORD']
     database = request.form['POSTGRES_DB']  
-    print(host, port, user, password, database)
+
     try:
         conn = psycopg2.connect(
             host=host,
