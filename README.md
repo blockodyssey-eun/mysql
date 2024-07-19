@@ -22,11 +22,13 @@ $ pip install -r requirements.txt
 $ python app.py
 ```
 
-2. postgresql 설정 입력
+2. localhost:5000 접속
 
-3. 연결 후 dump파일 업로드 (***dump의 파일명 형식은 [데이터베이스명]_dumps.sql***)
+3. postgresql 설정 입력
 
-4. migrate 진행
+4. 연결 후 dump파일 업로드 (***dump의 파일명 형식은 [데이터베이스명]_dumps.sql***)
+
+5. migrate 진행
 
 
 
