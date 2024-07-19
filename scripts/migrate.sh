@@ -131,8 +131,12 @@ check_postgres_host() {
     return 2
 }
    
+# execute_psql() {
+#     PGPASSWORD="${POSTGRES_PASSWORD}"  psql -h "${POSTGRES_HOST}" -p ${POSTGRES_PORT} -U "${POSTGRES_USER}" "$@"
+# }
+
 execute_psql() {
-    PGPASSWORD="${POSTGRES_PASSWORD}"  psql -h "${POSTGRES_HOST}" -p ${POSTGRES_PORT} -U "${POSTGRES_USER}" "$@"
+    docker run --rm --network host -e PGPASSWORD="${POSTGRES_PASSWORD}" postgres:latest psql -h "${POSTGRES_HOST}" -p ${POSTGRES_PORT} -U "${POSTGRES_USER}" "$@"
 }
 
 migrate_database() {
@@ -145,7 +149,6 @@ migrate_database() {
 
     # PostgreSQL 데이터베이스 존재 여부 확인
     db_exists=$(execute_psql -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}';")
-    echo "db_exists: ${db_exists}"
     if [ -z "$db_exists" ]; then
         echo "Creating database ${db_name}..."
         execute_psql -d postgres -c "CREATE DATABASE \"${db_name}\";"
