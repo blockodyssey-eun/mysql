@@ -10,7 +10,18 @@
         .form-section h2 { margin-bottom: 10px; }
         .form-inline { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .upload-box { flex-grow: 1; margin-right: 20px; }
-        .log-box { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
+        .log-box {
+    border: 1px solid #ccc;
+    padding: 10px;
+    height: 300px;
+    overflow-y: auto;
+}
+.log-box pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: monospace;
+}
         .btn { display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; }
         .btn:hover { background-color: #0056b3; }
         .btn:disabled { background-color: #cccccc; cursor: not-allowed; }
@@ -43,7 +54,8 @@
     </style>
     <script>
         let isMigrating = false;
-
+        let isConnected = false;
+        let isFileUploaded = false;
         function checkConnection() {
             const formData = new FormData(document.getElementById('env-form'));
             fetch('/connect', {
@@ -53,10 +65,25 @@
             .then(response => response.json())
             .then(data => {
                 alert(data.message);
+                isConnected = data.success;
+                updateMigrateButton();
             })
             .catch(error => {
                 alert('연결 확인 중 오류 발생: ' + error);
+                isConnected = false;
+                updateMigrateButton();
             });
+        }
+
+        function checkFileUpload() {
+            const fileInput = document.getElementById('file');
+            isFileUploaded = fileInput.files.length > 0;
+            updateMigrateButton();
+        }
+        
+        function updateMigrateButton() {
+            const migrateBtn = document.getElementById('migrate-btn');
+            migrateBtn.disabled = !(isConnected && isFileUploaded);
         }
 
         function startMigration() {
@@ -87,10 +114,10 @@
             
             xhr.onprogress = function() {
                 var logBox = document.getElementById('log-box');
-                logBox.innerHTML += xhr.responseText;
+                var logContent = document.getElementById('log-content');
+                logContent.innerHTML += xhr.responseText.replace(/\n/g, '<br>');
                 logBox.scrollTop = logBox.scrollHeight;
             };
-            
             xhr.onload = function() {
                 isMigrating = false;
                 connectBtn.disabled = false;
@@ -106,6 +133,10 @@
             
             xhr.send(formData);
         }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('migrate-btn').disabled = true;
+        });
     </script>
 </head>
 <body>
@@ -146,12 +177,12 @@
         <form id="migration-form" onsubmit="event.preventDefault(); startMigration();" enctype="multipart/form-data" class="form-inline">
             <div class="upload-box">
                 <label for="file">.sql (dump) 파일 업로드:</label>
-                <input type="file" name="file" id="file" accept=".sql">
+                <input type="file" name="file" id="file" accept=".sql" onchange="checkFileUpload()">
             </div>
-            <button type="submit" id="migrate-btn" class="btn btn-migrate">Migrate</button>
+            <button type="submit" id="migrate-btn" class="btn btn-migrate" disabled>Migrate</button>
         </form>
         <div id="log-box" class="log-box">
-            <pre></pre>
+            <pre id="log-content"></pre>
         </div>
     </div>
 </body>

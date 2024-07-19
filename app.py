@@ -86,7 +86,7 @@ def migrate_database(filepath, db_name, postgres_config):
                                    universal_newlines=True)
         
         for line in iter(process.stdout.readline, ''):
-            yield f"data: {line}\n\n"
+            yield f"{line}\n\n"
             time.sleep(0.1)
         
         process.stdout.close()
