@@ -7,6 +7,19 @@ Docker와 pgloader를 사용하여 MySQL에서 PostgreSQL로 데이터를 마이
 - Docker와 Docker Compose 설치
 - Docker Compose v2
 
+Ubuntu/Debian
+bash
+sudo apt update
+sudo apt install postgresql-client
+
+CentOS/RHEL
+bash
+sudo yum install postgresql
+
+macOS (Homebrew 사용)
+bash
+brew install postgresql
+
 ## 설정
 
 1. 이 저장소를 로컬 머신에 클론합니다.

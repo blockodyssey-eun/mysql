@@ -6,26 +6,152 @@
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
         .container { max-width: 800px; margin: 0 auto; }
+        .form-section { margin-bottom: 20px; }
+        .form-section h2 { margin-bottom: 10px; }
         .form-inline { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .upload-box { flex-grow: 1; }
+        .upload-box { flex-grow: 1; margin-right: 20px; }
         .log-box { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
         .btn { display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; }
         .btn:hover { background-color: #0056b3; }
+        .btn:disabled { background-color: #cccccc; cursor: not-allowed; }
+        .env-form input { margin-bottom: 10px; padding: 8px; }
+        .form-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .form-row input { width: 100%; }
+        .input-group { display: flex; flex-direction: column; margin-bottom: 10px; }
+        .input-group label { margin-bottom: 5px; font-weight: bold; }
+        .host-port-row { display: flex; justify-content: space-between; }
+        .host-port-row .input-group:first-child { width: 66%; margin-right: 10px; }
+        .host-port-row .input-group:last-child { width: 30%; }
+        .user-pass-row { display: flex; justify-content: space-between; }
+        .user-pass-row .input-group:first-child { width: 66%; margin-right: 10px; }
+        .user-pass-row .input-group:last-child { width: 30%; }
+        .btn-migrate { position: relative; overflow: hidden; }
+        .btn-migrate.loading::after {
+            content: "";
+            position: absolute;
+            left: -100%;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            animation: loading 1.5s infinite;
+        }
+        @keyframes loading {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
     </style>
+    <script>
+        let isMigrating = false;
+
+        function checkConnection() {
+            const formData = new FormData(document.getElementById('env-form'));
+            fetch('/connect', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+            })
+            .catch(error => {
+                alert('연결 확인 중 오류 발생: ' + error);
+            });
+        }
+
+        function startMigration() {
+            if (isMigrating) return;
+            
+            isMigrating = true;
+            var connectBtn = document.getElementById('connect-btn');
+            var migrateBtn = document.getElementById('migrate-btn');
+            
+            connectBtn.disabled = true;
+            migrateBtn.classList.add('loading');
+            migrateBtn.textContent = 'Migrating...';
+
+            var migrationForm = document.getElementById('migration-form');
+            var envForm = document.getElementById('env-form');
+            var formData = new FormData(migrationForm);
+            
+            // PostgreSQL 설정 값을 migration 폼에 복사
+            formData.append('POSTGRES_HOST', envForm.POSTGRES_HOST.value);
+            formData.append('POSTGRES_PORT', envForm.POSTGRES_PORT.value);
+            formData.append('POSTGRES_USER', envForm.POSTGRES_USER.value);
+            formData.append('POSTGRES_PASSWORD', envForm.POSTGRES_PASSWORD.value);
+            formData.append('POSTGRES_DB', envForm.POSTGRES_DB.value);
+            
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/migrate', true);
+            xhr.responseType = 'text';
+            
+            xhr.onprogress = function() {
+                var logBox = document.getElementById('log-box');
+                logBox.innerHTML += xhr.responseText;
+                logBox.scrollTop = logBox.scrollHeight;
+            };
+            
+            xhr.onload = function() {
+                isMigrating = false;
+                connectBtn.disabled = false;
+                migrateBtn.classList.remove('loading');
+                migrateBtn.textContent = 'Migrate';
+                
+                if (xhr.status === 200) {
+                    console.log('Migration completed');
+                } else {
+                    console.error('Migration failed');
+                }
+            };
+            
+            xhr.send(formData);
+        }
+    </script>
 </head>
 <body>
     <div class="container">
         <h1>MySQL To PostgreSQL Migrator</h1>
-        <form action="/migrate" method="post" enctype="multipart/form-data" class="form-inline">
+        <form id="env-form" class="env-form">
+            <div class="form-section">
+                <div class="form-row">
+                    <h2>PostgreSQL 설정</h2>
+                    <button type="button" id="connect-btn" class="btn" onclick="checkConnection()">연결</button>
+                </div>
+                <div class="host-port-row">
+                    <div class="input-group">
+                        <label for="POSTGRES_HOST">Host:</label>
+                        <input type="text" id="POSTGRES_HOST" name="POSTGRES_HOST" placeholder="예: localhost" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="POSTGRES_PORT">Port:</label>
+                        <input type="text" id="POSTGRES_PORT" name="POSTGRES_PORT" placeholder="예: 5432" required>
+                    </div>
+                </div>
+                <div class="user-pass-row">
+                    <div class="input-group">
+                        <label for="POSTGRES_USER">User:</label>
+                        <input type="text" id="POSTGRES_USER" name="POSTGRES_USER" placeholder="데이터베이스 사용자 이름" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="POSTGRES_PASSWORD">Password:</label>
+                        <input type="password" id="POSTGRES_PASSWORD" name="POSTGRES_PASSWORD" placeholder="비밀번호" required>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label for="POSTGRES_DB">Database:</label>
+                    <input type="text" id="POSTGRES_DB" name="POSTGRES_DB" placeholder="데이터베이스 이름" required>
+                </div>
+            </div>
+        </form>
+        <form id="migration-form" onsubmit="event.preventDefault(); startMigration();" enctype="multipart/form-data" class="form-inline">
             <div class="upload-box">
                 <label for="file">.sql (dump) 파일 업로드:</label>
                 <input type="file" name="file" id="file" accept=".sql">
             </div>
-            <button type="submit" class="btn">Migrate 버튼</button>
+            <button type="submit" id="migrate-btn" class="btn btn-migrate">Migrate</button>
         </form>
-        <div class="log-box">
-            <h2>로그</h2>
-            <pre>{{ log }}</pre>
+        <div id="log-box" class="log-box">
+            <pre></pre>
         </div>
     </div>
 </body>

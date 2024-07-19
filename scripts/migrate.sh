@@ -1,71 +1,84 @@
 #!/bin/bash
 
-# Docker Compose 버전 확인 및 명령어 설정
-set_docker_compose_cmd() {
-    if docker compose version &> /dev/null; then
-        DOCKER_COMPOSE_CMD="docker compose"
-    elif docker-compose --version &> /dev/null; then
-        DOCKER_COMPOSE_CMD="docker-compose"
+set -e
+
+MYSQL_ROOT_PASSWORD="qwer1234"
+
+# PostgreSQL 연결 정보
+POSTGRES_HOST=""
+POSTGRES_PORT=""
+POSTGRES_USER=""
+POSTGRES_PASSWORD=""
+POSTGRES_DB=""
+
+# Docker Compose 명령어 설정
+DOCKER_COMPOSE_CMD="docker compose"
+
+create_docker_network() {
+    docker network create migration_network
+}
+
+start_docker_compose() {
+    echo "Starting Docker Compose services..."
+    $DOCKER_COMPOSE_CMD up -d
+    if [ $? -eq 0 ]; then
+        echo "Docker Compose services have been started."
     else
-        echo "Error: Docker Compose not found. Please install Docker Compose."
+        echo "Failed to start Docker Compose services."
         exit 1
     fi
-    echo "Using Docker Compose command: $DOCKER_COMPOSE_CMD"
 }
 
-load_env() {
-    source .env
-}
 
-docker_down_and_up() {
-    $DOCKER_COMPOSE_CMD down -v
-    $DOCKER_COMPOSE_CMD up -d
-}
 
-wait_for_service() {
-    local service=$1
+wait_for_mysql() {
+    echo "MySQL: 실행 대기..."
     local max_attempts=30
     local attempt=0
-    
-    echo "${service}: 실행 대기..."
     while [ $attempt -lt $max_attempts ]; do
-        if [ "$service" = "MySQL" ] && $DOCKER_COMPOSE_CMD exec -T mysql mysqladmin ping -h mysql -u root -p"${MYSQL_ROOT_PASSWORD}" --silent &> /dev/null; then
-            echo "${service}: 실행 완료."
+        if $DOCKER_COMPOSE_CMD exec -T mysql mysqladmin ping -h localhost -u root -p"${MYSQL_ROOT_PASSWORD}" --silent &> /dev/null; then
+            echo "MySQL: 실행 완료."
             return 0
-        elif [ "$service" = "PostgreSQL" ]; then
-            echo "PostgreSQL이 시작될 때까지 대기 중..."
-            if [ "$POSTGRES_HOST" = "postgres" ]; then
-                if $DOCKER_COMPOSE_CMD exec -T postgres pg_isready -h localhost -U ${POSTGRES_USER} --quiet &> /dev/null; then
-                    echo "PostgreSQL이 준비되었습니다."
-                    return 0
-                fi
-            else
-                if docker run --rm postgres:16 pg_isready -h ${POSTGRES_HOST} -p ${POSTGRES_PORT} -U ${POSTGRES_USER} --quiet &> /dev/null; then
-                    echo "PostgreSQL이 준비되었습니다."
-                    return 0
-                fi
-            fi
         fi
         attempt=$((attempt+1))
-        echo "${service} 연결 시도 중... ($attempt/$max_attempts)"
+        echo "MySQL 연결 시도 중... ($attempt/$max_attempts)"
         sleep 5
     done
-    
-    echo "${service}: 시작 실패. 최대 시도 횟수 초과."
+    echo "MySQL: 시작 실패. 최대 시도 횟수 초과."
     return 1
 }
 
+import_mysql_dump() {
+    local dump_file="$1"
+    local db_name="$2"
+    echo "Importing MySQL dump file: ${dump_file}"
+    
+    # 데이터베이스 생성
+    $DOCKER_COMPOSE_CMD exec -T mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" -e "CREATE DATABASE IF NOT EXISTS ${db_name};"
+    
+    # 덤프 파일 임포트
+    $DOCKER_COMPOSE_CMD exec -T mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" "${db_name}" < "${dump_file}"
+    
+    if [ $? -eq 0 ]; then
+        echo "MySQL dump file imported successfully."
+    else
+        echo "Failed to import MySQL dump file."
+        exit 1
+    fi
+}
 
 create_pgloader_config() {
     local mysql_db=$1
     local pg_db=$2
     echo "PGLoader 설정 파일 생성 (${mysql_db} -> ${pg_db})..."
-    cat > pgloader.load <<EOF
+    mkdir -p ./pgloader_config
+    cat > ./pgloader_config/pgloader.load <<EOF
+
 LOAD DATABASE
-    FROM mysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/${mysql_db}
+    FROM mysql://root:${MYSQL_ROOT_PASSWORD}@localhost:3306/${mysql_db}
     INTO postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${pg_db}
 
-WITH include drop, create tables, drop indexes, create indexes, foreign keys, uniquify index names, quote identifiers
+WITH include drop, create tables, drop indexes, create indexes, foreign keys, uniquify index names
 
 SET maintenance_work_mem to '128MB', work_mem to '12MB'
 
@@ -85,7 +98,7 @@ EOF
 
 recreate_mysql_root_user() {
     echo "MySQL: Root계정 재생성..."
-    $DOCKER_COMPOSE_CMD exec -T mysql mysql -h mysql -u root -p"${MYSQL_ROOT_PASSWORD}" <<EOF
+    $DOCKER_COMPOSE_CMD exec -T mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" <<EOF
 DROP USER IF EXISTS 'root'@'%';
 CREATE USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${MYSQL_ROOT_PASSWORD}';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
@@ -93,25 +106,49 @@ FLUSH PRIVILEGES;
 EOF
 }
 
-execute_psql() {
-    if [ "$POSTGRES_HOST" = "postgres" ]; then
-        $DOCKER_COMPOSE_CMD exec -T postgres psql -U ${POSTGRES_USER} "$@"
-    else
-        docker run --rm -e PGPASSWORD=${POSTGRES_PASSWORD} postgres:16 psql -h ${POSTGRES_HOST} -p ${POSTGRES_PORT} -U ${POSTGRES_USER} "$@"
-    fi
-}
 
+check_postgres_host() {
+    echo "check_postgres_host $POSTGRES_HOST"
+    if [ "$POSTGRES_HOST" = "localhost" ] || [ "$POSTGRES_HOST" = "127.0.0.1" ]; then
+        # Check if PostgreSQL is running in a Docker container
+        if docker ps --format '{{.Names}}' | grep -q 'postgres'; then
+            echo "PostgreSQL is running in a Docker container."
+            POSTGRES_CONTAINER=$(docker ps --format '{{.Names}}' | grep 'postgres' | head -n 1)
+            POSTGRES_NETWORK=$(docker inspect -f '{{range $key, $value := .NetworkSettings.Networks}}{{$key}}{{end}}' $POSTGRES_CONTAINER)
+            echo "PostgreSQL container name: $POSTGRES_CONTAINER"
+            echo "PostgreSQL network: $POSTGRES_NETWORK"
+            POSTGRES_HOST=$POSTGRES_CONTAINER
+
+            # Ensure MySQL container is connected to the same network
+            docker network connect $POSTGRES_NETWORK mysql
+
+            return 0
+        else
+            echo "PostgreSQL is running locally on the host."
+            return 1
+        fi
+    fi
+    return 2
+}
+   
+execute_psql() {
+    PGPASSWORD="${POSTGRES_PASSWORD}"  psql -h "${POSTGRES_HOST}" -p ${POSTGRES_PORT} -U "${POSTGRES_USER}" "$@"
+}
 
 migrate_database() {
     local db_name=$1
     echo "Migrating ${db_name} database..."
+    echo "${POSTGRES_PASSWORD}"
+    echo "${POSTGRES_HOST}"
+    echo "${POSTGRES_PORT}"
+    echo "${POSTGRES_USER}"
 
     # PostgreSQL 데이터베이스 존재 여부 확인
-    db_exists=$(execute_psql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}'")
-    
+    db_exists=$(execute_psql -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}';")
+    echo "db_exists: ${db_exists}"
     if [ -z "$db_exists" ]; then
         echo "Creating database ${db_name}..."
-        execute_psql -d postgres -c "CREATE DATABASE ${db_name};"
+        execute_psql -d postgres -c "CREATE DATABASE \"${db_name}\";"
         if [ $? -ne 0 ]; then
             echo "Failed to create database ${db_name}. Exiting."
             return 1
@@ -136,38 +173,59 @@ migrate_database() {
 verify_migration() {
     local db_name=$1
     echo "Verifying migration for ${db_name}..."
-    execute_psql -d ${db_name} -c "\dt"
+    execute_psql -d "${db_name}" -c "\dt"
+}
+
+cleanup_docker_compose() {
+    echo "Stopping and removing Docker Compose services..."
+    $DOCKER_COMPOSE_CMD down -v
+    if [ $? -eq 0 ]; then
+        echo "Docker Compose services have been stopped and removed."
+    else
+        echo "Failed to stop and remove Docker Compose services."
+    fi
 }
 
 main() {
-    set_docker_compose_cmd
-    load_env
-    docker_down_and_up
-    wait_for_service "MySQL"
-    wait_for_service "PostgreSQL"
-
-    recreate_mysql_root_user
-
-    # 명령줄 인자 확인
-    if [ $# -eq 0 ]; then
-        echo "Usage: $0 <dump_file_path>"
+    if [ $# -lt 6 ]; then
+        echo "Usage: $0 <dump_file_path> <postgres_host> <postgres_port> <postgres_user> <postgres_password> <postgres_db>"
         exit 1
     fi
 
-    dump_file="$1"
+    local dump_file="$1"
+    POSTGRES_HOST="$2"
+    POSTGRES_PORT="$3"
+    POSTGRES_USER="$4"
+    POSTGRES_PASSWORD="$5"
+    POSTGRES_DB="$6"
+
     if [ ! -f "$dump_file" ]; then
         echo "Error: File $dump_file does not exist."
         exit 1
     fi
 
+
     # 파일 이름에서 데이터베이스 이름 추출
+    local db_name
     db_name=$(basename "$dump_file" _dumps.sql)
     
-    echo "Processing database: $db_name"
-    migrate_database ${db_name}
-    verify_migration ${db_name}
+    # create_docker_network
+    start_docker_compose
+    wait_for_mysql
+    recreate_mysql_root_user
+    import_mysql_dump "${dump_file}" "${db_name}"
 
-    echo "Migration completed for $db_name."
+    # Check PostgreSQL host
+    # check_postgres_host
+    # postgres_host_type=$?
+    echo "Processing database: $db_name"
+    if migrate_database "${db_name}"; then
+        verify_migration "${db_name}"
+        echo "Migration completed for $db_name."
+    else
+        echo "Migration failed for $db_name."
+        exit 1
+    fi
 }
 
 main "$@"
