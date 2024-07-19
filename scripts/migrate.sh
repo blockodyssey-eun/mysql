@@ -29,8 +29,6 @@ start_docker_compose() {
     fi
 }
 
-
-
 wait_for_mysql() {
     echo "MySQL: 실행 대기..."
     local max_attempts=30
@@ -106,35 +104,6 @@ FLUSH PRIVILEGES;
 EOF
 }
 
-
-check_postgres_host() {
-    echo "check_postgres_host $POSTGRES_HOST"
-    if [ "$POSTGRES_HOST" = "localhost" ] || [ "$POSTGRES_HOST" = "127.0.0.1" ]; then
-        # Check if PostgreSQL is running in a Docker container
-        if docker ps --format '{{.Names}}' | grep -q 'postgres'; then
-            echo "PostgreSQL is running in a Docker container."
-            POSTGRES_CONTAINER=$(docker ps --format '{{.Names}}' | grep 'postgres' | head -n 1)
-            POSTGRES_NETWORK=$(docker inspect -f '{{range $key, $value := .NetworkSettings.Networks}}{{$key}}{{end}}' $POSTGRES_CONTAINER)
-            echo "PostgreSQL container name: $POSTGRES_CONTAINER"
-            echo "PostgreSQL network: $POSTGRES_NETWORK"
-            POSTGRES_HOST=$POSTGRES_CONTAINER
-
-            # Ensure MySQL container is connected to the same network
-            docker network connect $POSTGRES_NETWORK mysql
-
-            return 0
-        else
-            echo "PostgreSQL is running locally on the host."
-            return 1
-        fi
-    fi
-    return 2
-}
-   
-# execute_psql() {
-#     PGPASSWORD="${POSTGRES_PASSWORD}"  psql -h "${POSTGRES_HOST}" -p ${POSTGRES_PORT} -U "${POSTGRES_USER}" "$@"
-# }
-
 execute_psql() {
     docker run --rm --network host -e PGPASSWORD="${POSTGRES_PASSWORD}" postgres:latest psql -h "${POSTGRES_HOST}" -p ${POSTGRES_PORT} -U "${POSTGRES_USER}" "$@"
 }
@@ -142,10 +111,6 @@ execute_psql() {
 migrate_database() {
     local db_name=$1
     echo "Migrating ${db_name} database..."
-    echo "${POSTGRES_PASSWORD}"
-    echo "${POSTGRES_HOST}"
-    echo "${POSTGRES_PORT}"
-    echo "${POSTGRES_USER}"
 
     # PostgreSQL 데이터베이스 존재 여부 확인
     db_exists=$(execute_psql -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}';")
@@ -188,6 +153,102 @@ cleanup_docker_compose() {
         echo "Failed to stop and remove Docker Compose services."
     fi
 }
+get_mysql_info() {
+    $DOCKER_COMPOSE_CMD exec -T mysql mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -D "${MYSQL_DATABASE}" -se "$1" 2>/dev/null
+}
+
+get_pg_info() {
+    # echo "Executing PostgreSQL query: $1" >&2
+    result=$(execute_psql -t -c "$1")
+    # echo "Raw result: '$result'" >&2
+    trimmed_result=$(echo "$result" | tr -d ' ')
+    # echo "Trimmed result: '$trimmed_result'" >&2
+    echo "$trimmed_result"
+}
+
+compare_structure() {
+    echo "구조 비교:"
+    printf "%-20s | %-10s | %-10s | %-5s\n" "Metric" "MySQL" "PostgreSQL" "Match"
+    printf "%s\n" "---------------------------------------------------"
+
+    metrics=(
+        "Table Count:SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${MYSQL_DATABASE}':SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'"
+        "Column Count:SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='${MYSQL_DATABASE}':SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public'"
+        "Index Count:SELECT COUNT(DISTINCT CONCAT(TABLE_NAME, '.', INDEX_NAME)) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = '${MYSQL_DATABASE}':SELECT COUNT(*) FROM pg_indexes WHERE schemaname='public'"
+        "Foreign Key Count:SELECT COUNT(*) FROM information_schema.key_column_usage WHERE referenced_table_schema='${MYSQL_DATABASE}':SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_type='FOREIGN KEY' AND table_schema='public'"
+        "Primary Key Count:SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_type='PRIMARY KEY' AND table_schema='${MYSQL_DATABASE}':SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_type='PRIMARY KEY' AND table_schema='public'"
+    )
+
+    for metric in "${metrics[@]}"; do
+        IFS=':' read -r name mysql_query pg_query <<< "$metric"
+        mysql_value=$(get_mysql_info "$mysql_query")
+        pg_value=$(get_pg_info "$pg_query")
+        match=$([ "$mysql_value" = "$pg_value" ] && echo "Yes" || echo "No")
+        printf "%-20s | %-10s | %-10s | %-5s\n" "$name" "$mysql_value" "$pg_value" "$match"
+    done
+}
+
+compare_record_counts() {
+    echo -e "\n테이블별 레코드 수 비교:"
+    printf "%-35s | %10s | %10s | %-5s\n" "Table Name" "MySQL" "PostgreSQL" "Match"
+    printf "%s\n" "-------------------------------------------------------------------------"
+
+    TABLES=$(get_mysql_info "SHOW TABLES;")
+    for table in $TABLES; do
+        mysql_count=$(get_mysql_info "SELECT COUNT(*) FROM \`$table\`;" 2>/dev/null || echo "N/A")
+        pg_count=$(get_pg_info "SELECT COUNT(*) FROM public.\"$table\";" 2>/dev/null || echo "N/A")
+        match=$([ "$mysql_count" = "$pg_count" ] && echo "Yes" || echo "No")
+        printf "%-35s | %10s | %10s | %-5s\n" "$table" "$mysql_count" "$pg_count" "$match"
+    done
+}
+
+compare_indexes() {
+    echo -e "\n인덱스 비교:"
+    printf "%-35s | %-35s | %-7s\n" "MySQL Index" "PostgreSQL Index" "Match"
+    printf "%s\n" "---------------------------------------------------------------------------------"
+
+    mysql_indexes=$(get_mysql_info "
+        SELECT CONCAT(TABLE_NAME, '.', INDEX_NAME) 
+        FROM INFORMATION_SCHEMA.STATISTICS 
+        WHERE TABLE_SCHEMA = '${MYSQL_DATABASE}' 
+        GROUP BY TABLE_NAME, INDEX_NAME 
+        ORDER BY TABLE_NAME, INDEX_NAME;
+    ")
+
+    pg_indexes=$(get_pg_info "
+        SELECT CONCAT(tablename, '.', indexname) 
+        FROM pg_indexes 
+        WHERE schemaname = 'public' 
+        ORDER BY tablename, indexname;
+    ")
+
+    while IFS= read -r mysql_index; do
+        table_name=${mysql_index%.*}
+        index_name=${mysql_index#*.}
+        
+        pg_index=$(echo "$pg_indexes" | grep -i "^${table_name}\." | grep -i "${index_name:0:30}")
+        
+        if [ -n "$pg_index" ]; then
+            match="Yes"
+        else
+            pg_index=$(echo "$pg_indexes" | grep -i "^${table_name}\." | grep -i "${index_name:0:20}")
+            match=$([ -n "$pg_index" ] && echo "Yes*" || echo "No")
+            pg_index=${pg_index:-"N/A"}
+        fi
+        printf "%-35s | %-35s | %-7s\n" "${mysql_index:0:35}" "${pg_index:0:35}" "$match"
+    done <<< "$mysql_indexes"
+}
+
+
+verify_migration() {
+    local db_name=$1
+    echo "마이그레이션 결과를 검증합니다..."
+    MYSQL_DATABASE="${db_name}"
+    compare_structure
+    compare_record_counts
+    compare_indexes
+}
+
 
 main() {
     if [ $# -lt 6 ]; then
@@ -218,13 +279,20 @@ main() {
     recreate_mysql_root_user
     import_mysql_dump "${dump_file}" "${db_name}"
 
-    # Check PostgreSQL host
-    # check_postgres_host
-    # postgres_host_type=$?
     echo "Processing database: $db_name"
     if migrate_database "${db_name}"; then
         verify_migration "${db_name}"
         echo "Migration completed for $db_name."
+
+        
+        # verify.sh 호출 시 db_name과 함께 DOCKER_COMPOSE_CMD를 인자로 전달
+        # ./scripts/verify.sh "${db_name}" "${POSTGRES_HOST}" "${POSTGRES_PORT}" "${POSTGRES_USER}" "${POSTGRES_PASSWORD}" "${POSTGRES_DB}" "${DOCKER_COMPOSE_CMD}"
+
+        if [ $? -eq 0 ]; then
+            echo "Verification completed successfully."
+        else
+            echo "Verification failed. Please check the results."
+        fi
     else
         echo "Migration failed for $db_name."
         exit 1
