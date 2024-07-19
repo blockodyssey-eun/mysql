@@ -64,5 +64,5 @@ data: Migration failed for user
 
 **해결방안**
 ```
-Migrate 버튼 재실행 (MySQL이 로드되기이전에 )
+Migrate 버튼 재 클릭
 ```
